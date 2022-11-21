@@ -7,13 +7,15 @@ contract Casino {
     address sideA;
     uint value;
     uint placedAt;
-    bool accepted;   
+    bool accepted;
+    uint randomA;   
   }    // struct ProposedBet
 
 
   struct AcceptedBet {
     address sideB;
     uint acceptedAt;
+    uint hashB;
     uint randomB;
   }   // struct AcceptedBet
 
@@ -59,7 +61,7 @@ contract Casino {
 
 
   // Called by sideB to continue
-  function acceptBet(uint _commitment, uint _random) external payable {
+  function acceptBet(uint _commitment, uint _hashB) external payable {
 
     require(!proposedBet[_commitment].accepted,
       "Bet has already been accepted");
@@ -70,7 +72,7 @@ contract Casino {
 
     acceptedBet[_commitment].sideB = msg.sender;
     acceptedBet[_commitment].acceptedAt = block.timestamp;
-    acceptedBet[_commitment].randomB = _random;
+    acceptedBet[_commitment].hashB = _hashB;
     proposedBet[_commitment].accepted = true;
 
     emit BetAccepted(_commitment, proposedBet[_commitment].sideA);
@@ -78,19 +80,37 @@ contract Casino {
 
 
   // Called by sideA to reveal their random value and conclude the bet
-  function reveal(uint _random) external {
+  function revealFist(uint _random) external {
     uint _commitment = uint256(keccak256(abi.encodePacked(_random)));
-    address payable _sideA = payable(msg.sender);
-    address payable _sideB = payable(acceptedBet[_commitment].sideB);
-    uint _agreedRandom = _random ^ acceptedBet[_commitment].randomB;
-    uint _value = proposedBet[_commitment].value;
 
     require(proposedBet[_commitment].sideA == msg.sender,
       "Not a bet you placed or wrong value");
     require(proposedBet[_commitment].accepted,
       "Bet has not been accepted yet");
+    proposedBet[_commitment].randomA = _random;
+    if(acceptedBet[_commitment].randomB != 0) {
+      defineWinner(_commitment);
+    }
+  }  // function reveal
 
-    // Pay and emit an event
+  function revealSecond(uint _commitment, uint _random) external {
+    uint _hashB = uint256(keccak256(abi.encodePacked(_random)));
+
+    require(acceptedBet[_commitment].hashB == _hashB,
+      "Number is wrong");
+    acceptedBet[_commitment].randomB = _random;
+    if(proposedBet[_commitment].randomA != 0) {
+      defineWinner(_commitment);
+    }
+  }
+
+  function defineWinner(uint _commitment) private {
+    address payable _sideA = payable(proposedBet[_commitment].sideA);
+    address payable _sideB = payable(acceptedBet[_commitment].sideB);
+    uint _agreedRandom = proposedBet[_commitment].randomA ^ acceptedBet[_commitment].randomB;
+    uint _value = proposedBet[_commitment].value;
+
+        // Pay and emit an event
     if (_agreedRandom % 2 == 0) {
       // sideA wins
       _sideA.transfer(2*_value);
@@ -104,7 +124,6 @@ contract Casino {
     // Cleanup
     delete proposedBet[_commitment];
     delete acceptedBet[_commitment];
-
-  }  // function reveal
+  }
 
 }   // contract Casino
